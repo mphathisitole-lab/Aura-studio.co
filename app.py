@@ -27,6 +27,9 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 # App configuration
 # ---------------------------------------------------------------------------
 app = Flask(__name__)
+
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SECRET_KEY"] = os.environ.get(
     "SECRET_KEY", "change-me-in-production-use-a-real-secret"
 )
@@ -581,6 +584,11 @@ def login():
             if not user.is_verified:
                 flash("Please verify your email to use all features.", "warning")
                 return redirect(url_for("unverified"))
+            if user.is_admin:
+                session["is_admin"] = True
+                session["admin_id"] = user.id
+                flash(f"Welcome, {user.first_name}!", "success")
+                return redirect(url_for("admin_dashboard"))
             flash(f"Welcome back, {user.first_name}!", "success")
             next_url = request.args.get("next") or request.form.get("next")
             if next_url:
