@@ -33,10 +33,14 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SECRET_KEY"] = os.environ.get(
     "SECRET_KEY", "change-me-in-production-use-a-real-secret"
 )
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///csas.db"
+_db_url = os.environ.get("DATABASE_URL", "sqlite:///csas.db")
+# Render provides postgres:// but SQLAlchemy needs postgresql://
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "connect_args": {"check_same_thread": False}
+    "connect_args": {} if _db_url.startswith("postgresql") else {"check_same_thread": False}
 }
 
 
@@ -483,30 +487,40 @@ def api_suggest_password():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
+    form_data = {}
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        form_data = {
+            "first_name": request.form.get("first_name", "").strip(),
+            "last_name": request.form.get("last_name", "").strip(),
+            "email": request.form.get("email", "").strip().lower(),
+            "phone": request.form.get("phone", "").strip(),
+            "physical_address": request.form.get("physical_address", "").strip(),
+            "street_number": request.form.get("street_number", "").strip(),
+            "postal_code": request.form.get("postal_code", "").strip(),
+        }
+        email = form_data["email"]
         password = request.form.get("password", "")
         confirm = request.form.get("confirm_password", "")
 
         ok, msg = validate_password(password)
         if not ok:
             flash(msg, "danger")
-            return redirect(url_for("register"))
+            return render_template("register.html", form=form_data)
         if password != confirm:
             flash("Passwords do not match.", "danger")
-            return redirect(url_for("register"))
+            return render_template("register.html", form=form_data)
         if User.query.filter_by(email=email).first():
             flash("An account with this email already exists.", "danger")
-            return redirect(url_for("register"))
+            return render_template("register.html", form=form_data)
 
         user = User(
-            first_name=request.form["first_name"].strip(),
-            last_name=request.form["last_name"].strip(),
+            first_name=form_data["first_name"],
+            last_name=form_data["last_name"],
             email=email,
-            phone=request.form["phone"].strip(),
-            physical_address=request.form.get("physical_address", "").strip(),
-            street_number=request.form.get("street_number", "").strip(),
-            postal_code=request.form.get("postal_code", "").strip(),
+            phone=form_data["phone"],
+            physical_address=form_data["physical_address"],
+            street_number=form_data["street_number"],
+            postal_code=form_data["postal_code"],
             is_verified=False,
         )
         user.set_password(password)
@@ -532,7 +546,7 @@ def register():
                 "warning",
             )
         return redirect(url_for("unverified"))
-    return render_template("register.html")
+    return render_template("register.html", form=form_data)
 
 
 @app.route("/verify-email/<token>")
@@ -792,9 +806,7 @@ def pay_payfast(appt_id):
         "cancel_url": url_for("payment_cancel", appt_id=appt.id, _external=True),
         "notify_url": url_for("payfast_notify", _external=True),
         "name_first": user.first_name,
-        "name_last": user.last_name,
         "email_address": user.email,
-        "cell_number": user.phone.replace(" ", "").replace("+", ""),
         "m_payment_id": str(appt.id),
         "amount": f"{appt.price:.2f}",
         "item_name": f"Aura Studio.co - {appt.hairstyle_name}",

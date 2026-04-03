@@ -19,35 +19,35 @@
             <div class="form-row">
                 <div class="form-group">
                     <label>First Name *</label>
-                    <input type="text" name="first_name" required placeholder="e.g. Sipho">
+                    <input type="text" name="first_name" required placeholder="e.g. Sipho" value="{{ form.get('first_name', '') }}">
                 </div>
                 <div class="form-group">
                     <label>Last Name *</label>
-                    <input type="text" name="last_name" required placeholder="e.g. Ndlovu">
+                    <input type="text" name="last_name" required placeholder="e.g. Ndlovu" value="{{ form.get('last_name', '') }}">
                 </div>
             </div>
             <div class="form-row">
                 <div class="form-group">
                     <label>Email Address *</label>
-                    <input type="email" name="email" required placeholder="sipho@email.com">
+                    <input type="email" name="email" required placeholder="sipho@email.com" value="{{ form.get('email', '') }}">
                 </div>
                 <div class="form-group">
                     <label>Phone Number *</label>
-                    <input type="tel" name="phone" required placeholder="071 234 5678">
+                    <input type="tel" name="phone" required placeholder="071 234 5678" value="{{ form.get('phone', '') }}">
                 </div>
             </div>
             <div class="form-group">
                 <label>Physical Address</label>
-                <input type="text" name="physical_address" placeholder="123 Main Road, Durban">
+                <input type="text" name="physical_address" placeholder="123 Main Road, Durban" value="{{ form.get('physical_address', '') }}">
             </div>
             <div class="form-row">
                 <div class="form-group">
                     <label>Street Number</label>
-                    <input type="text" name="street_number" placeholder="123">
+                    <input type="text" name="street_number" placeholder="123" value="{{ form.get('street_number', '') }}">
                 </div>
                 <div class="form-group">
                     <label>Postal Code</label>
-                    <input type="text" name="postal_code" placeholder="4001">
+                    <input type="text" name="postal_code" placeholder="4001" value="{{ form.get('postal_code', '') }}">
                 </div>
             </div>
 
