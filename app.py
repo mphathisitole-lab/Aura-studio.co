@@ -33,14 +33,6 @@ app.config["SECRET_KEY"] = os.environ.get(
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///csas.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# Set APP_URL to your production domain (e.g. "https://aurastudio.onrender.com")
-# Leave unset in dev — Flask will use the request host automatically
-_app_url = os.environ.get("APP_URL", "").rstrip("/")
-if _app_url:
-    from urllib.parse import urlparse as _urlparse
-    _parsed = _urlparse(_app_url)
-    app.config["SERVER_NAME"] = _parsed.netloc
-    app.config["PREFERRED_URL_SCHEME"] = _parsed.scheme
 
 # Flask-Mail — Gmail requires sender to match your actual email address
 app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
