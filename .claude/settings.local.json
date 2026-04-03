@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(printf 'blinker==1.9.0\\\\nclick==8.3.1\\\\ncolorama==0.4.6\\\\nFlask==3.1.3\\\\nFlask-Mail==0.10.0\\\\nFlask-SQLAlchemy==3.1.1\\\\ngreenlet==3.3.2\\\\ngunicorn==25.3.0\\\\nh11==0.16.0\\\\nitsdangerous==2.2.0\\\\nJinja2==3.1.6\\\\nMarkupSafe==3.0.3\\\\npackaging==26.0\\\\npsycopg2-binary==2.9.10\\\\npython-dotenv==1.2.2\\\\npython-engineio==4.13.1\\\\npython-socketio==5.16.1\\\\nsimple-websocket==1.1.0\\\\nSQLAlchemy==2.0.48\\\\ntyping_extensions==4.15.0\\\\nWerkzeug==3.1.6\\\\nwsproto==1.3.2\\\\n')"
+    ]
+  }
+}
