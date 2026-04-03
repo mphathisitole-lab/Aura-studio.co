@@ -35,6 +35,9 @@ app.config["SECRET_KEY"] = os.environ.get(
 )
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///csas.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "connect_args": {"check_same_thread": False}
+}
 
 
 # Flask-Mail — Gmail requires sender to match your actual email address
@@ -269,7 +272,7 @@ def verified_required(f):
         if "user_id" not in session:
             flash("Please log in first.", "warning")
             return redirect(url_for("login", next=request.url))
-        user = User.query.get(session["user_id"])
+        user = db.session.get(User, session["user_id"])
         if not user:
             session.clear()
             flash("Session expired. Please log in again.", "warning")
@@ -554,7 +557,7 @@ def verify_email(token):
 @app.route("/unverified")
 @login_required
 def unverified():
-    user = User.query.get(session["user_id"])
+    user = db.session.get(User, session["user_id"])
     if user.is_verified:
         return redirect(url_for("dashboard"))
     return render_template("unverified.html", user=user)
@@ -563,7 +566,7 @@ def unverified():
 @app.route("/resend-verification")
 @login_required
 def resend_verification():
-    user = User.query.get(session["user_id"])
+    user = db.session.get(User, session["user_id"])
     if user.is_verified:
         flash("Your email is already verified.", "info")
         return redirect(url_for("dashboard"))
@@ -656,7 +659,7 @@ def reset_password(token):
 @app.route("/dashboard")
 @login_required
 def dashboard():
-    user = User.query.get(session["user_id"])
+    user = db.session.get(User, session["user_id"])
     upcoming = (
         Appointment.query.filter_by(user_id=user.id)
         .filter(Appointment.appointment_date >= date.today())
@@ -736,7 +739,7 @@ def book():
             appointment.payment_status = "pay_on_arrival"
             appointment.status = "confirmed"
             db.session.commit()
-            user = User.query.get(session["user_id"])
+            user = db.session.get(User, session["user_id"])
             send_confirmation_email(user, appointment)
             flash("Appointment booked! Pay on arrival.", "success")
             return redirect(url_for("dashboard"))
@@ -758,7 +761,7 @@ def book():
 @app.route("/cancel/<int:appt_id>", methods=["POST"])
 @login_required
 def cancel_appointment(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
+    appt = db.session.get(Appointment, appt_id) or abort(404)
     if appt.user_id != session["user_id"]:
         abort(403)
     appt.status = "cancelled"
@@ -776,10 +779,10 @@ def cancel_appointment(appt_id):
 @login_required
 def pay_payfast(appt_id):
     """Build PayFast payment form and redirect user."""
-    appt = Appointment.query.get_or_404(appt_id)
+    appt = db.session.get(Appointment, appt_id) or abort(404)
     if appt.user_id != session["user_id"]:
         abort(403)
-    user = User.query.get(session["user_id"])
+    user = db.session.get(User, session["user_id"])
 
     # PayFast data dict — order matters for signature!
     data = {
@@ -825,13 +828,13 @@ def payfast_notify():
     payment_status = pf_data.get("payment_status")
 
     if appt_id and payment_status == "COMPLETE":
-        appt = Appointment.query.get(int(appt_id))
+        appt = db.session.get(Appointment, int(appt_id))
         if appt:
             appt.payment_status = "paid"
             appt.payment_reference = pf_data.get("pf_payment_id", "")
             appt.status = "confirmed"
             db.session.commit()
-            user = User.query.get(appt.user_id)
+            user = db.session.get(User, appt.user_id)
             send_confirmation_email(user, appt)
 
     return "OK", 200
@@ -840,13 +843,13 @@ def payfast_notify():
 # --- Payment return pages ---
 @app.route("/pay/success/<int:appt_id>")
 def payment_success(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
+    appt = db.session.get(Appointment, appt_id) or abort(404)
     # Mark as paid if not already done by notify callback
     if appt.payment_status != "paid":
         appt.payment_status = "paid"
         appt.status = "confirmed"
         db.session.commit()
-        user = User.query.get(appt.user_id)
+        user = db.session.get(User, appt.user_id)
         send_confirmation_email(user, appt)
     flash("Payment successful! Your appointment is confirmed.", "success")
     return render_template("payment_success.html", appointment=appt)
@@ -854,7 +857,7 @@ def payment_success(appt_id):
 
 @app.route("/pay/cancel/<int:appt_id>")
 def payment_cancel(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
+    appt = db.session.get(Appointment, appt_id) or abort(404)
     appt.status = "cancelled"
     appt.payment_status = "cancelled"
     db.session.commit()
@@ -867,7 +870,7 @@ def payment_cancel(appt_id):
 # ===================================================================
 @app.route("/review/<int:appt_id>", methods=["GET", "POST"])
 def submit_review(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
+    appt = db.session.get(Appointment, appt_id) or abort(404)
     if appt.status != "completed":
         flash("This appointment is not eligible for review.", "warning")
         return redirect(url_for("index"))
@@ -957,7 +960,7 @@ def admin_chat_conversations():
     user_ids = db.session.query(ChatMessage.user_id).distinct().all()
     conversations = []
     for (uid,) in user_ids:
-        user = User.query.get(uid)
+        user = db.session.get(User, uid)
         if not user:
             continue
         last_msg = (
@@ -995,7 +998,7 @@ def admin_chat_messages(user_id):
         if m.sender == "user" and not m.is_read:
             m.is_read = True
     db.session.commit()
-    user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     return jsonify({
         "user_name": f"{user.first_name} {user.last_name}" if user else "Unknown",
         "messages": [
@@ -1264,7 +1267,7 @@ def block_time():
 @app.route("/admin/unblock/<int:block_id>", methods=["POST"])
 @admin_required
 def unblock_time(block_id):
-    block = BlockedSlot.query.get_or_404(block_id)
+    block = db.session.get(BlockedSlot, block_id) or abort(404)
     db.session.delete(block)
     db.session.commit()
     flash("Time block removed.", "info")
@@ -1274,11 +1277,11 @@ def unblock_time(block_id):
 @app.route("/admin/complete/<int:appt_id>", methods=["POST"])
 @admin_required
 def complete_appointment(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
+    appt = db.session.get(Appointment, appt_id) or abort(404)
     appt.status = "completed"
     appt.payment_status = "paid"
     db.session.commit()
-    user = User.query.get(appt.user_id)
+    user = db.session.get(User, appt.user_id)
     send_review_email(user, appt)
     flash("Appointment completed. Review request sent.", "success")
     return redirect(url_for("admin_dashboard"))
