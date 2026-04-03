@@ -1414,13 +1414,25 @@ def _render_email_debug(steps, username, password):
 def _migrate_db():
     """Add any columns that exist in the model but not yet in the DB."""
     from sqlalchemy import text
+    is_postgres = db.engine.dialect.name == "postgresql"
     with db.engine.connect() as conn:
-        result = conn.execute(text("PRAGMA table_info(users)"))
-        existing = {row[1] for row in result}
-        migrations = [
-            ("is_verified", "BOOLEAN NOT NULL DEFAULT 0"),
-            ("is_admin",    "BOOLEAN NOT NULL DEFAULT 0"),
-        ]
+        if is_postgres:
+            result = conn.execute(text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='users'"
+            ))
+            existing = {row[0] for row in result}
+            migrations = [
+                ("is_verified", "BOOLEAN NOT NULL DEFAULT FALSE"),
+                ("is_admin",    "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ]
+        else:
+            result = conn.execute(text("PRAGMA table_info(users)"))
+            existing = {row[1] for row in result}
+            migrations = [
+                ("is_verified", "BOOLEAN NOT NULL DEFAULT 0"),
+                ("is_admin",    "BOOLEAN NOT NULL DEFAULT 0"),
+            ]
         for col, definition in migrations:
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {definition}"))
