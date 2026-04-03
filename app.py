@@ -33,10 +33,13 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["SECRET_KEY"] = os.environ.get(
     "SECRET_KEY", "change-me-in-production-use-a-real-secret"
 )
-_db_url = os.environ.get("DATABASE_URL", "sqlite:///csas.db")
-# Render provides postgres:// but SQLAlchemy needs postgresql://
+_db_url = os.environ.get("DATABASE_URL", "")
 if _db_url.startswith("postgres://"):
     _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+if not _db_url:
+    # Use /tmp on Render (writable), local instance/ folder in dev
+    _sqlite_path = "/tmp/csas.db" if os.environ.get("RENDER") else "sqlite:///csas.db"
+    _db_url = _sqlite_path if _sqlite_path.startswith("sqlite") else f"sqlite:///{_sqlite_path}"
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
