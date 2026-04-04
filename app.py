@@ -21,7 +21,7 @@ from flask import (
     flash, session, jsonify, abort
 )
 from flask_sqlalchemy import SQLAlchemy
-from flask_mail import Mail, Message
+import resend
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
@@ -49,21 +49,13 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 }
 
 
-# Flask-Mail — Gmail requires sender to match your actual email address
-app.config["MAIL_SERVER"] = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
-app.config["MAIL_PORT"] = int(os.environ.get("MAIL_PORT", 587))
-app.config["MAIL_USE_TLS"] = True   # Gmail port 587 needs TLS
-app.config["MAIL_USE_SSL"] = False  # Only True if using port 465
-app.config["MAIL_USERNAME"] = os.environ.get("MAIL_USERNAME", "aurastudio.co6@gmail.com")
-app.config["MAIL_PASSWORD"] = os.environ.get("MAIL_PASSWORD", "")  # Set via env var or .env file
-# CRITICAL: Sender MUST be your actual Gmail address
-app.config["MAIL_DEFAULT_SENDER"] = (
-    "Aura Studio.co <" + app.config["MAIL_USERNAME"] + ">"
-)
-app.config["MAIL_DEBUG"] = True  # Print SMTP conversation to console
+# Resend — HTTP-based email API (works on Render free tier, no SMTP needed)
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+MAIL_FROM_NAME = "Aura Studio.co"
+MAIL_FROM_ADDRESS = os.environ.get("MAIL_FROM_ADDRESS", "aurastudio.co6@gmail.com")
+resend.api_key = RESEND_API_KEY
 
 db = SQLAlchemy(app)
-mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
 # ---------------------------------------------------------------------------
@@ -304,105 +296,59 @@ def admin_required(f):
 
 
 # ---------------------------------------------------------------------------
-# Email senders
+# Email senders (Resend HTTP API — works on Render free tier)
 # ---------------------------------------------------------------------------
-def check_mail_configured():
-    """Return True if SMTP credentials are set."""
-    return bool(app.config.get("MAIL_USERNAME")) and bool(app.config.get("MAIL_PASSWORD"))
+def _send_email(to_email, subject, html_body):
+    """Send an email via Resend's HTTP API. Returns True on success."""
+    if not RESEND_API_KEY:
+        print(f"⚠ RESEND_API_KEY not set — email to {to_email} not sent.")
+        return False
+    try:
+        resend.Emails.send({
+            "from": f"{MAIL_FROM_NAME} <{MAIL_FROM_ADDRESS}>",
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+        })
+        print(f"✓ Email sent to {to_email}: {subject}")
+        return True
+    except BaseException as e:
+        print(f"✗ Email FAILED to {to_email}: {e}")
+        return False
 
 
 def send_verification_email(user):
-    """Send email verification link."""
-    if not check_mail_configured():
-        print("⚠ MAIL NOT CONFIGURED — Set MAIL_USERNAME and MAIL_PASSWORD env vars.")
-        print(f"  Verification link for {user.email} would be:")
-        token = generate_token(user.email, salt="email-verify")
-        print(f"  {url_for('verify_email', token=token, _external=True)}")
-        return False
-    try:
-        token = generate_token(user.email, salt="email-verify")
-        verify_url = url_for("verify_email", token=token, _external=True)
-        msg = Message(
-            subject="Aura Studio.co — Verify Your Email",
-            recipients=[user.email],
-        )
-        msg.html = render_template(
-            "email_verify.html", user=user, verify_url=verify_url
-        )
-        mail.send(msg)
-        print(f"✓ Verification email sent to {user.email}")
-        return True
-    except BaseException as e:
-        print(f"✗ Verification email FAILED for {user.email}: {e}")
-        return False
+    token = generate_token(user.email, salt="email-verify")
+    verify_url = url_for("verify_email", token=token, _external=True)
+    if not RESEND_API_KEY:
+        print(f"  Verification link for {user.email}:")
+        print(f"  {verify_url}")
+    html = render_template("email_verify.html", user=user, verify_url=verify_url)
+    return _send_email(user.email, "Aura Studio.co — Verify Your Email", html)
 
 
 def send_reset_email(user):
-    """Send password reset link."""
-    if not check_mail_configured():
-        print("⚠ MAIL NOT CONFIGURED — Set MAIL_USERNAME and MAIL_PASSWORD env vars.")
-        token = generate_token(user.email, salt="password-reset")
+    token = generate_token(user.email, salt="password-reset")
+    reset_url = url_for("reset_password", token=token, _external=True)
+    if not RESEND_API_KEY:
         print(f"  Reset link for {user.email}:")
-        print(f"  {url_for('reset_password', token=token, _external=True)}")
-        return False
-    try:
-        token = generate_token(user.email, salt="password-reset")
-        reset_url = url_for("reset_password", token=token, _external=True)
-        msg = Message(
-            subject="Aura Studio.co — Reset Your Password",
-            recipients=[user.email],
-        )
-        msg.html = render_template(
-            "email_reset.html", user=user, reset_url=reset_url
-        )
-        mail.send(msg)
-        print(f"✓ Reset email sent to {user.email}")
-        return True
-    except BaseException as e:
-        print(f"✗ Reset email FAILED for {user.email}: {e}")
-        return False
+        print(f"  {reset_url}")
+    html = render_template("email_reset.html", user=user, reset_url=reset_url)
+    return _send_email(user.email, "Aura Studio.co — Reset Your Password", html)
 
 
 def send_confirmation_email(user, appointment):
-    if not check_mail_configured():
-        print(f"⚠ MAIL NOT CONFIGURED — Booking confirmation for {user.email} not sent.")
-        return False
-    try:
-        msg = Message(
-            subject="Aura Studio.co — Booking Confirmation",
-            recipients=[user.email],
-        )
-        msg.html = render_template(
-            "email_confirmation.html", user=user, appointment=appointment
-        )
-        mail.send(msg)
-        print(f"✓ Booking confirmation sent to {user.email}")
-        return True
-    except BaseException as e:
-        print(f"✗ Booking confirmation FAILED for {user.email}: {e}")
-        return False
+    html = render_template("email_confirmation.html", user=user, appointment=appointment)
+    return _send_email(user.email, "Aura Studio.co — Booking Confirmation", html)
 
 
 def send_review_email(user, appointment):
-    if not check_mail_configured():
-        print(f"⚠ MAIL NOT CONFIGURED — Review email for {user.email} not sent.")
-        return False
-    try:
-        msg = Message(
-            subject="Aura Studio.co — How Was Your Cut?",
-            recipients=[user.email],
-        )
-        msg.html = render_template(
-            "email_review.html", user=user, appointment=appointment
-        )
-        mail.send(msg)
+    html = render_template("email_review.html", user=user, appointment=appointment)
+    sent = _send_email(user.email, "Aura Studio.co — How Was Your Cut?", html)
+    if sent:
         appointment.review_sent = True
         db.session.commit()
-        print(f"✓ Review email sent to {user.email}")
-        return True
-    except BaseException as e:
-        print(f"✗ Review email FAILED for {user.email}: {e}")
-        return False
+    return sent
 
 
 def get_admin_settings():
@@ -1451,14 +1397,10 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("✂  Aura Studio.co")
     print("=" * 50)
-    if check_mail_configured():
-        print(f"📧 Email: CONFIGURED ({app.config['MAIL_USERNAME']})")
-        print(f"   Server: {app.config['MAIL_SERVER']}:{app.config['MAIL_PORT']}")
-        print(f"   Sender: {app.config['MAIL_DEFAULT_SENDER']}")
+    if RESEND_API_KEY:
+        print(f"📧 Email: CONFIGURED via Resend (from: {MAIL_FROM_ADDRESS})")
     else:
-        print("⚠  Email: NOT CONFIGURED")
-        print("   Set MAIL_USERNAME and MAIL_PASSWORD env vars.")
-        print("   Visit /test-email after starting to diagnose.")
+        print("⚠  Email: NOT CONFIGURED — set RESEND_API_KEY env var.")
     pf_live = not PAYFAST_SANDBOX
     print(f"💳 PayFast: {'LIVE' if pf_live else 'SANDBOX (test mode)'}")
     print(f"📞 Contact: {CONTACT_PHONE}")
