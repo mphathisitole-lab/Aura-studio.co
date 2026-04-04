@@ -1,6 +1,8 @@
 import os
 import re
 import hashlib
+import socket
+socket.setdefaulttimeout(15)  # prevent SMTP/network hangs from killing gunicorn workers
 
 try:
     from dotenv import load_dotenv  # type: ignore[import]
@@ -43,7 +45,7 @@ if not _db_url:
 app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-    "connect_args": {} if _db_url.startswith("postgresql") else {"check_same_thread": False}
+    "connect_args": {"sslmode": "require"} if _db_url.startswith("postgresql") else {"check_same_thread": False}
 }
 
 
@@ -330,7 +332,7 @@ def send_verification_email(user):
         mail.send(msg)
         print(f"✓ Verification email sent to {user.email}")
         return True
-    except Exception as e:
+    except BaseException as e:
         print(f"✗ Verification email FAILED for {user.email}: {e}")
         return False
 
@@ -356,7 +358,7 @@ def send_reset_email(user):
         mail.send(msg)
         print(f"✓ Reset email sent to {user.email}")
         return True
-    except Exception as e:
+    except BaseException as e:
         print(f"✗ Reset email FAILED for {user.email}: {e}")
         return False
 
@@ -376,7 +378,7 @@ def send_confirmation_email(user, appointment):
         mail.send(msg)
         print(f"✓ Booking confirmation sent to {user.email}")
         return True
-    except Exception as e:
+    except BaseException as e:
         print(f"✗ Booking confirmation FAILED for {user.email}: {e}")
         return False
 
@@ -398,7 +400,7 @@ def send_review_email(user, appointment):
         db.session.commit()
         print(f"✓ Review email sent to {user.email}")
         return True
-    except Exception as e:
+    except BaseException as e:
         print(f"✗ Review email FAILED for {user.email}: {e}")
         return False
 
