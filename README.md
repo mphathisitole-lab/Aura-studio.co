@@ -90,25 +90,12 @@ $env:PAYFAST_MERCHANT_KEY="your_merchant_key"
 $env:PAYFAST_PASSPHRASE="your_passphrase"
 $env:PAYFAST_SANDBOX="false"
 ```
-> Sign up at https://www.payfast.co.za
-> Link your Capitec account (2208645495) in the PayFast merchant dashboard under Payout Settings.
 
 ### 4. Run
 ```bash
 python app.py
 ```
 Open: **http://127.0.0.1:5000**
-
----
-
-## Admin Credentials
-
-| Field    | Value           |
-|----------|-----------------|
-| Username | `admin`         |
-| Password | `aurastudio2024` |
-
-Admin panel: **http://127.0.0.1:5000/admin/login**
 
 ---
 
