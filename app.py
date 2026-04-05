@@ -351,7 +351,10 @@ def send_verification_email(user):
     token = generate_token(user.email, salt="email-verify")
     verify_url = url_for("verify_email", token=token, _external=True)
     print(f"  Verification link for {user.email}: {verify_url}")
-    html = render_template("email_verify.html", user=user, verify_url=verify_url)
+    html = render_template(
+        "email_verify.html", user=user, verify_url=verify_url,
+        contact_phone=CONTACT_PHONE, contact_email=CONTACT_EMAIL,
+    )
     return _send_email(user.email, "Aura Studio.co — Verify Your Email", html)
 
 
@@ -359,17 +362,26 @@ def send_reset_email(user):
     token = generate_token(user.email, salt="password-reset")
     reset_url = url_for("reset_password", token=token, _external=True)
     print(f"  Reset link for {user.email}: {reset_url}")
-    html = render_template("email_reset.html", user=user, reset_url=reset_url)
+    html = render_template(
+        "email_reset.html", user=user, reset_url=reset_url,
+        contact_phone=CONTACT_PHONE, contact_email=CONTACT_EMAIL,
+    )
     return _send_email(user.email, "Aura Studio.co — Reset Your Password", html)
 
 
 def send_confirmation_email(user, appointment):
-    html = render_template("email_confirmation.html", user=user, appointment=appointment)
+    html = render_template(
+        "email_confirmation.html", user=user, appointment=appointment,
+        contact_phone=CONTACT_PHONE, contact_email=CONTACT_EMAIL,
+    )
     return _send_email(user.email, "Aura Studio.co — Booking Confirmation", html)
 
 
 def send_review_email(user, appointment):
-    html = render_template("email_review.html", user=user, appointment=appointment)
+    html = render_template(
+        "email_review.html", user=user, appointment=appointment,
+        contact_phone=CONTACT_PHONE, contact_email=CONTACT_EMAIL,
+    )
     sent = _send_email(user.email, "Aura Studio.co — How Was Your Cut?", html)
     if sent:
         appointment.review_sent = True
