@@ -22,7 +22,10 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from flask_mail import Mail, Message
-import resend
+try:
+    import resend  # type: ignore[import]
+except ImportError:
+    resend = None
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 
@@ -65,7 +68,8 @@ app.config["MAIL_DEFAULT_SENDER"] = (
 RESEND_API_KEY    = os.environ.get("RESEND_API_KEY", "")
 MAIL_FROM_NAME    = "Aura Studio.co"
 MAIL_FROM_ADDRESS = os.environ.get("MAIL_USERNAME", "aurastudio.co6@gmail.com")
-resend.api_key    = RESEND_API_KEY
+if resend is not None:
+    resend.api_key = RESEND_API_KEY
 
 db   = SQLAlchemy(app)
 mail = Mail(app)
@@ -313,8 +317,8 @@ def admin_required(f):
 # ---------------------------------------------------------------------------
 def _send_via_resend(to_email, subject, html_body):
     """Fallback: send via Resend HTTP API (works when SMTP is blocked)."""
-    if not RESEND_API_KEY:
-        print(f"⚠ RESEND_API_KEY not set — fallback unavailable for {to_email}")
+    if resend is None or not RESEND_API_KEY:
+        print(f"⚠ Resend not available or API key not set — fallback unavailable for {to_email}")
         return False
     try:
         resend.Emails.send({
