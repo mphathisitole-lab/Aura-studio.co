@@ -21,6 +21,7 @@ from flask import (
     flash, session, jsonify, abort
 )
 from flask_sqlalchemy import SQLAlchemy
+from flask_mail import Mail, Message
 import resend
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
@@ -49,13 +50,25 @@ app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
 }
 
 
-# Resend — HTTP-based email API (works on Render free tier, no SMTP needed)
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
-MAIL_FROM_NAME = "Aura Studio.co"
-MAIL_FROM_ADDRESS = os.environ.get("MAIL_FROM_ADDRESS", "aurastudio.co6@gmail.com")
-resend.api_key = RESEND_API_KEY
+# Flask-Mail (primary — SMTP)
+app.config["MAIL_SERVER"]         = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
+app.config["MAIL_PORT"]           = int(os.environ.get("MAIL_PORT", 587))
+app.config["MAIL_USE_TLS"]        = True
+app.config["MAIL_USE_SSL"]        = False
+app.config["MAIL_USERNAME"]       = os.environ.get("MAIL_USERNAME", "aurastudio.co6@gmail.com")
+app.config["MAIL_PASSWORD"]       = os.environ.get("MAIL_PASSWORD", "")
+app.config["MAIL_DEFAULT_SENDER"] = (
+    "Aura Studio.co <" + os.environ.get("MAIL_USERNAME", "aurastudio.co6@gmail.com") + ">"
+)
 
-db = SQLAlchemy(app)
+# Resend (fallback — HTTP API, used when SMTP is blocked e.g. on Render free tier)
+RESEND_API_KEY    = os.environ.get("RESEND_API_KEY", "")
+MAIL_FROM_NAME    = "Aura Studio.co"
+MAIL_FROM_ADDRESS = os.environ.get("MAIL_USERNAME", "aurastudio.co6@gmail.com")
+resend.api_key    = RESEND_API_KEY
+
+db   = SQLAlchemy(app)
+mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
 # ---------------------------------------------------------------------------
@@ -296,12 +309,12 @@ def admin_required(f):
 
 
 # ---------------------------------------------------------------------------
-# Email senders (Resend HTTP API — works on Render free tier)
+# Email senders — Flask-Mail (SMTP) primary, Resend HTTP API fallback
 # ---------------------------------------------------------------------------
-def _send_email(to_email, subject, html_body):
-    """Send an email via Resend's HTTP API. Returns True on success."""
+def _send_via_resend(to_email, subject, html_body):
+    """Fallback: send via Resend HTTP API (works when SMTP is blocked)."""
     if not RESEND_API_KEY:
-        print(f"⚠ RESEND_API_KEY not set — email to {to_email} not sent.")
+        print(f"⚠ RESEND_API_KEY not set — fallback unavailable for {to_email}")
         return False
     try:
         resend.Emails.send({
@@ -310,19 +323,30 @@ def _send_email(to_email, subject, html_body):
             "subject": subject,
             "html": html_body,
         })
-        print(f"✓ Email sent to {to_email}: {subject}")
+        print(f"✓ Email sent via Resend to {to_email}")
         return True
     except BaseException as e:
-        print(f"✗ Email FAILED to {to_email}: {e}")
+        print(f"✗ Resend fallback FAILED for {to_email}: {e}")
         return False
+
+
+def _send_email(to_email, subject, html_body):
+    """Try Flask-Mail (SMTP) first; fall back to Resend if SMTP fails."""
+    if app.config.get("MAIL_PASSWORD"):
+        try:
+            msg = Message(subject=subject, recipients=[to_email], html=html_body)
+            mail.send(msg)
+            print(f"✓ Email sent via SMTP to {to_email}")
+            return True
+        except BaseException as e:
+            print(f"⚠ SMTP failed for {to_email}: {e} — trying Resend fallback")
+    return _send_via_resend(to_email, subject, html_body)
 
 
 def send_verification_email(user):
     token = generate_token(user.email, salt="email-verify")
     verify_url = url_for("verify_email", token=token, _external=True)
-    if not RESEND_API_KEY:
-        print(f"  Verification link for {user.email}:")
-        print(f"  {verify_url}")
+    print(f"  Verification link for {user.email}: {verify_url}")
     html = render_template("email_verify.html", user=user, verify_url=verify_url)
     return _send_email(user.email, "Aura Studio.co — Verify Your Email", html)
 
@@ -330,9 +354,7 @@ def send_verification_email(user):
 def send_reset_email(user):
     token = generate_token(user.email, salt="password-reset")
     reset_url = url_for("reset_password", token=token, _external=True)
-    if not RESEND_API_KEY:
-        print(f"  Reset link for {user.email}:")
-        print(f"  {reset_url}")
+    print(f"  Reset link for {user.email}: {reset_url}")
     html = render_template("email_reset.html", user=user, reset_url=reset_url)
     return _send_email(user.email, "Aura Studio.co — Reset Your Password", html)
 
@@ -1397,10 +1419,14 @@ if __name__ == "__main__":
     print("\n" + "=" * 50)
     print("✂  Aura Studio.co")
     print("=" * 50)
-    if RESEND_API_KEY:
-        print(f"📧 Email: CONFIGURED via Resend (from: {MAIL_FROM_ADDRESS})")
-    else:
-        print("⚠  Email: NOT CONFIGURED — set RESEND_API_KEY env var.")
+    smtp_ok = bool(app.config.get("MAIL_PASSWORD"))
+    resend_ok = bool(RESEND_API_KEY)
+    if smtp_ok:
+        print(f"📧 Email: SMTP configured ({app.config['MAIL_USERNAME']})")
+    if resend_ok:
+        print(f"📧 Email: Resend fallback configured")
+    if not smtp_ok and not resend_ok:
+        print("⚠  Email: NOT CONFIGURED — set MAIL_PASSWORD and/or RESEND_API_KEY")
     pf_live = not PAYFAST_SANDBOX
     print(f"💳 PayFast: {'LIVE' if pf_live else 'SANDBOX (test mode)'}")
     print(f"📞 Contact: {CONTACT_PHONE}")
